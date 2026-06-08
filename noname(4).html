@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-select=none, touch-action=none">
+    <title>TRASH MATRIX: HORIZONTAL UNIVERSE</title>
+    <style>
+        body {
+            background-color: #050404;
+            color: #ff9900;
+            font-family: 'Arial Black', sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            width: 100vw;
+        }
+        header {
+            background: #000;
+            text-align: center;
+            padding: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            border-bottom: 2px solid #ff5500;
+            color: #55ff55;
+            z-index: 10;
+        }
+        #game-wrapper {
+            position: relative;
+            flex: 1;
+            width: 100%;
+            height: 100%;
+        }
+        #gameCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        /* Интерфейс управления под горизонтальный режим */
+        .controls-overlay {
+            position: absolute;
+            bottom: 15px;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 30px;
+            box-sizing: border-box;
+            pointer-events: none; /* Пропускает клики на холст, где нет кнопок */
+            z-index: 5;
+        }
+        .d-pad {
+            position: relative;
+            width: 120px;
+            height: 120px;
+            pointer-events: auto;
+        }
+        .d-btn {
+            position: absolute;
+            background: rgba(31, 18, 12, 0.85);
+            border: 2px solid #ff5500;
+            color: #ff9900;
+            width: 38px;
+            height: 38px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 8px;
+        }
+        #d-up    { top: 0; left: 41px; }
+        #d-down  { bottom: 0; left: 41px; }
+        #d-left  { top: 41px; left: 0; }
+        #d-right { top: 41px; right: 0; }
+        
+        .action-container {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            pointer-events: auto;
+            margin-top: 20px;
+        }
+        .act-btn {
+            background: linear-gradient(#b34400, #551100);
+            border: 2px solid #fff;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 4px 0 #220500;
+        }
+        .act-btn:active {
+            transform: translateY(3px);
+            box-shadow: none;
+        }
+        .act-btn .ico { font-size: 24px; }
+        .act-btn .lbl { font-size: 8px; color: #fff; font-weight: bold; margin-top: 2px;}
+    </style>
+</head>
+<body>
+
+    <header>By SemRoos | TRASH MATRIX: ГОРИЗОНТАЛЬНЫЙ БЕСКОНЕЧНЫЙ МИР (Поверни экран боком!)</header>
+
+    <div id="game-wrapper">
+        <canvas id="gameCanvas"></canvas>
+
+        <div class="controls-overlay">
+            <div class="d-pad">
+                <div class="d-btn" id="d-up">▲</div>
+                <div class="d-btn" id="d-left">◀</div>
+                <div class="d-btn" id="d-right">▶</div>
+                <div class="d-btn" id="d-down">▼</div>
+            </div>
+
+            <div class="action-container">
+                <div class="act-btn" id="btn-heal" style="background: linear-gradient(#ffcc00, #886600);">
+                    <span class="ico">🌯</span>
+                    <span class="lbl">Чебурек</span>
+                </div>
+                <div class="act-btn" id="btn-attack">
+                    <span class="ico">👊</span>
+                    <span class="lbl">УДАР / NPC</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    function resizeCanvas() {
+        const wrapper = document.getElementById("game-wrapper");
+        canvas.width = wrapper.clientWidth;
+        canvas.height = wrapper.clientHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+
+    // === ПИКСЕЛЬНЫЙ ДВИЖОК ГРАФИКИ ===
+    const pal = {
+        '.': 'transparent', '1': '#000000', 'B': '#0055ff', 'R': '#ff0000', 
+        'Y': '#ffff00', 'W': '#ffffff', 'G': '#336633', 'S': '#ffccaa', 
+        'H': '#663300', 'D': '#555555', 'L': '#aaaaaa', 'P': '#9900ff', 'O': '#ff7700'
+    };
+
+    function drawSprite(mapArray, scale) {
+        const c = document.createElement('canvas');
+        c.width = mapArray[0].length * scale;
+        c.height = mapArray.length * scale;
+        const cCtx = c.getContext('2d');
+        for (let y = 0; y < mapArray.length; y++) {
+            for (let x = 0; x < mapArray[y].length; x++) {
+                if (mapArray[y][x] !== '.') {
+                    cCtx.fillStyle = pal[mapArray[y][x]];
+                    cCtx.fillRect(x * scale, y * scale, scale, scale);
+                }
+            }
+        }
+        return c;
+    }
+
+    // Спрайты персонажей
+    const imgOptimus = drawSprite([
+        "....1111....", "...1BBBB1...", "..1BYYYYB1..", "..1BBBBBB1..",
+        ".1BB1111BB1.", ".1B1RRRR1B1.", ".1B1RRRR1B1.", ".1B1RRRR1B1.",
+        "...1WWWW1...", "...1BBBB1...", "...1B11B1...", "...11..11..."
+    ], 4);
+
+    const imgValera = drawSprite([
+        "....HHHH....", "...HSSSS1...", "..1SS11S11..", "..1SSSSSS1..",
+        ".11HSSSS111.", ".111GGGG111.", ".1G1GGGG1G1.", ".1G1GGGG1G1.",
+        "...111111...", "...1H11H1...", "...11..11..."
+    ], 4);
+
+    const imgMegatron = drawSprite([
+        ".....1111.....", "....1DDDD1....", "...1DRRRRD1...", "...1DDDDDD1...",
+        "..1DD1111DD1..", ".11D1LLLL1D11.", ".1D11LLLL11D1.", ".1D11LLLL11R1.",
+        "...1DDDDDD11..", "...1D1111D1...", "...1D1111D1...", "...11....11..."
+    ], 5);
+
+    // Спрайты для двух разных Торговцев/NPC
+    const imgShaurman = drawSprite([
+        "....1111....", "...1WWWW1...", "..1W1111W1..", "..1WSSSSW1..",
+        ".111O11O111.", ".11OOOOOO11.", ".1O1OOOO1O1.", "...111111...",
+        "...11..11..."
+    ], 5);
+
+    const imgSifor = drawSprite([
+        "....1111....", "...1PPPP1...", "..1P1YY1P1..", "..1PSSSS11..",
+        ".111LLLL111.", ".11LLLLLL11.", ".1L1LLLL1L1.", "...111111...",
+        "...11..11..."
+    ], 5);
+
+    // Игровые параметры игрока
+    let hp = 100, maxHp = 100, dmg = 15, money = 15, hoboPoints = 0;
+    let currentRoomId = 1; 
+    let gameOver = false;
+    let logText = "Добро пожаловать в Матрицу Свалки! Беги направо ▶";
+
+    const player = { x: 50, y: 150, w: 48, h: 48, speed: 4.5, dir: "right" };
+    const keys = { up: false, down: false, left: false, right: false };
+    let particles = [];
+
+    // Объект текущей локации (будет перезаписываться при переходах)
+    let activeLocation = {};
+
+    // Шаблоны биомов для генератора
+    const biomes = [
+        { name: "ОКРАИНА СВАЛКИ", color: "#140e0b", accent: "#3a221d" },
+        { name: "БАЗАР ШАУРМЕНОВ", color: "#111218", accent: "#222536" },
+        { name: "ПОДЗЕМЕЛЬЯ МАТРИЦЫ", color: "#1c0b0b", accent: "#421212" },
+        { name: "ЗАБРОШЕННОЕ МЕТРО", color: "#0f1411", accent: "#1b2920" }
+    ];
+
+    // ГЕНЕРАТОР НОВОЙ СЛУЧАЙНОЙ ЛОКАЦИИ
+    function generateLocation(roomId) {
+        let biome = biomes[roomId % biomes.length];
+        
+        // Сложность растет каждые несколько комнат
+        let difficulty = Math.min(5, Math.floor(roomId / 3) + 1); 
+        let enemyCount = Math.floor(Math.random() * difficulty) + 2; // Много врагов!
+
+        let loc = {
+            id: roomId,
+            name: `${roomId}. ${biome.name}`,
+            bgColor: biome.color,
+            accentColor: biome.accent,
+            bins: [],
+            enemies: [],
+            npc: null
+        };
+
+        // Спавним мусорные баки
+        let binCount = Math.floor(Math.random() * 3) + 1;
+        for(let i=0; i<binCount; i++) {
+            loc.bins.push({
+                x: 150 + (i * 180) + Math.random()*50,
+                y: 90 + Math.random()*100,
+                broken: false
+            });
+        }
+
+        // Спавним кучу врагов
+        for(let i=0; i<enemyCount; i++) {
+            let isBoss = (roomId % 5 === 0) && (i === 0); // Каждые 5 комнат — босс Мегатрон
+            let eType = isBoss ? "МЕГАТРОН" : "Бомж Валера";
+            let eImg = isBoss ? imgMegatron : imgValera;
+            let eHp = isBoss ? (100 + roomId*10) : (30 + roomId * 4);
+
+            loc.enemies.push({
+                x: 250 + (i * 130) + Math.random()*40,
+                y: 80 + Math.random()*120,
+                hp: eHp,
+                maxHp: eHp,
+                type: eType,
+                img: eImg,
+                w: isBoss ? 60 : 44,
+                h: isBoss ? 65 : 48
+            });
+        }
+
+        // Спавним NPC / Лавку (с шансом 60%, если это не комната с Боссом)
+        if (roomId % 5 !== 0 && Math.random() < 0.6) {
+            let npcType = Math.random() > 0.5 ? "Шаурмен" : "Сифон";
+            loc.npc = {
+                x: canvas.width > 200 ? canvas.width / 2 - 20 : 300,
+                y: 70,
+                type: npcType,
+                img: npcType === "Шаурмен" ? imgShaurman : imgSifor,
+                w: 45,
+                h: 45,
+                cost: 20 + roomId * 2
+            };
+        }
+
+        return loc;
+    }
+
+    // Инициализация первой комнаты
+    activeLocation = generateLocation(currentRoomId);
+
+    // УПРАВЛЕНИЕ (Кнопки)
+    function setupJoystick(id, prop) {
+        const b = document.getElementById(id);
+        const on = (e) => { e.preventDefault(); keys[prop] = true; if(prop==="left"||prop==="right") player.dir = prop; };
+        const off = (e) => { e.preventDefault(); keys[prop] = false; };
+        b.addEventListener("touchstart", on); b.addEventListener("touchend", off);
+        b.addEventListener("mousedown", on); b.addEventListener("mouseup", off);
+        b.addEventListener("mouseleave", off);
+    }
+    setupJoystick("d-up", "up"); setupJoystick("d-down", "down");
+    setupJoystick("d-left", "left"); setupJoystick("d-right", "right");
+
+    document.getElementById("btn-attack").addEventListener("touchstart", (e) => { e.preventDefault(); doAttack(); });
+    document.getElementById("btn-attack").addEventListener("mousedown", (e) => { e.preventDefault(); doAttack(); });
+    document.getElementById("btn-heal").addEventListener("touchstart", (e) => { e.preventDefault(); doHeal(); });
+    document.getElementById("btn-heal").addEventListener("mousedown", (e) => { e.preventDefault(); doHeal(); });
+
+    // КНОПКА АТАКЫ / ДЕЙСТВИЯ С NPC
+    function doAttack() {
+        if (gameOver) return;
+        let hit = false;
+
+        // 1. Проверяем взаимодействие с NPC
+        let npc = activeLocation.npc;
+        if (npc && Math.hypot(player.x - npc.x, player.y - npc.y) < 65) {
+            if (money >= npc.cost) {
+                money -= npc.cost;
+                if (npc.type === "Шаурмен") {
+                    dmg += 6;
+                    logText = `🌯 Апгрейд у Шаурмена! Твоя АТАКА увеличилась до ${dmg}!`;
+                } else {
+                    maxHp += 20; hp += 20;
+                    logText = `🧪 Металлолом Сифона увеличил твою БРОНЮ (Макс HP) до ${maxHp}!`;
+                }
+                createParticles(npc.x, npc.y + 20, "#55ff55");
+            } else {
+                logText = `❌ Не хватает хлама! Нужно еще ${npc.cost - money} ед. хлама.`;
+            }
+            return;
+        }
+
+        // 2. Удары по бакам
+        activeLocation.bins.forEach(b => {
+            if (!b.broken && Math.hypot(player.x - b.x, player.y - b.y) < 50) {
+                b.broken = true; hit = true;
+                let prize = Math.floor(Math.random() * 12) + 10;
+                money += prize; hoboPoints += 15;
+                logText = `🗑️ Разбит бак! Найдено +${prize} хлама. Получено +15 Очков Бомжа!`;
+                createParticles(b.x, b.y, "#aaaaaa");
+            }
+        });
+
+        // 3. Удары по толпе врагов
+        activeLocation.enemies.forEach(en => {
+            if (en.hp > 0 && Math.hypot(player.x - en.x, player.y - en.y) < 55) {
+                en.hp -= dmg; hit = true;
+                createParticles(en.x, en.y, "#ff1100");
+                logText = `👊 Оптимус врезал по ${en.type}! Нанесено ${dmg} урона.`;
+                
+                if (en.hp <= 0) {
+                    let reward = en.type === "МЕГАТРОН" ? 100 : 25;
+                    money += reward;
+                    hoboPoints += en.type === "МЕГАТРОН" ? 200 : 50; // Накопление Очков Бомжа
+                    logText = `💀 ${en.type} повержен! Куча деталей принесла +${reward} хлама и гору очков!`;
+                }
+            }
+        });
+
+        if(!hit && !npc) logText = "💨 Удар по воздуху! Подойди ближе к врагу или баку.";
+    }
+
+    // ЛЕЧЕНИЕ
+    function doHeal() {
+        if (money >= 15 && hp < maxHp) {
+            money -= 15; hp = Math.min(maxHp, hp + 30);
+            logText = "🌯 Чебурек съеден! Броня залатана на +30%!";
+            createParticles(player.x + 20, player.y + 20, "#ffcc00");
+        } else if (hp >= maxHp) {
+            logText = "❌ У тебя и так идеальное состояние брони!";
+        } else {
+            logText = "❌ Не хватает хлама на чебурек (нужно 15)!";
+        }
+    }
+
+    function createParticles(x, y, color) {
+        for(let i=0; i<8; i++) {
+            particles.push({x: x, y: y, vx: (Math.random()-0.5)*6, vy: (Math.random()-0.5)*6, life: 20, color: color});
+        }
+    }
+
+    // ОБНОВЛЕНИЕ КАДРА И ЛОГИКА ИГРЫ
+    function update() {
+        if (gameOver) return;
+
+        // Перемещение игрока
+        if (keys.up && player.y > 65) player.y -= player.speed;
+        if (keys.down && player.y < canvas.height - 65) player.y += player.speed;
+        if (keys.left) player.x -= player.speed;
+        if (keys.right) player.x += player.speed;
+
+        // КРУГОВОЙ / СЛУЧАЙНЫЙ БЕСКОНЕЧНЫЙ ПЕРЕХОД НАПРАВО ▶
+        if (player.x > canvas.width + 10) {
+            currentRoomId++;
+            player.x = 10;
+            activeLocation = generateLocation(currentRoomId);
+            hoboPoints += 100; // Бонус за продвижение по комнатам
+            logText = `🚀 Ты вошел на локацию: ${activeLocation.name}! Получено +100 Очков Бомжа!`;
+        }
+        
+        // Возврат налево ◀ (К зацикленной предыдущей комнате)
+        if (player.x < -20) {
+            if (currentRoomId > 1) {
+                currentRoomId--;
+                player.x = canvas.width - 20;
+                activeLocation = generateLocation(currentRoomId);
+                logText = `↩️ Ты отступил назад на локацию: ${activeLocation.name}`;
+            } else {
+                player.x = 5;
+            }
+        }
+
+        // Логика поведения врагов (Толпа нападает одновременно)
+        activeLocation.enemies.forEach(en => {
+            if (en.hp <= 0) return;
+
+            let dx = player.x + player.w/2 - en.x;
+            let dy = player.y + player.h/2 - en.y;
+            let dist = Math.hypot(dx, dy);
+
+            // Преследование игрока
+            if (dist > 30) {
+                en.x += (dx / dist) * 1.4;
+                en.y += (dy / dist) * 1.4;
+            } else {
+                // Атака врага
+                if (Math.random() < 0.03) {
+                    let damageDealt = en.type === "МЕГАТРОН" ? 12 : 5;
+                    hp -= damageDealt;
+                    logText = `💥 ${en.type} пробил твою обшивку на -${damageDealt}% HP!`;
+                    createParticles(player.x + 20, player.y + 20, "#ff3300");
+                    if (hp <= 0) { hp = 0; gameOver = true; }
+                }
+            }
+        });
+
+        particles.forEach((p, i) => { p.x += p.vx; p.y += p.vy; p.life--; if(p.life<=0) particles.splice(i,1); });
+    }
+
+    // ОТРИСОВКА ВСЕГО НА ЭКРАНЕ
+    function draw() {
+        // Заливка фона локации
+        ctx.fillStyle = activeLocation.bgColor;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // ГОРИЗОНТАЛЬНЫЙ ЗАДНИЙ ПЛАН (Трущобы/Город)
+        ctx.fillStyle = activeLocation.accentColor;
+        ctx.fillRect(20, 25, 60, 60);
+        ctx.fillRect(110, 15, 90, 70);
+        ctx.fillRect(240, 30, 75, 55);
+        ctx.fillRect(360, 20, 110, 65);
+        ctx.fillRect(520, 35, 80, 50);
+
+        // Линия горизонта/земли
+        ctx.strokeStyle = "#ff5500"; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(0, 65); ctx.lineTo(canvas.width, 65); ctx.stroke();
+
+        // Рисуем Лавку Торговца / NPC (Если он есть на карте)
+        let npc = activeLocation.npc;
+        if (npc) {
+            ctx.drawImage(npc.img, npc.x - npc.w/2, npc.y - npc.h/2, npc.w, npc.h);
+            
+            // Вывеска над лавкой
+            ctx.fillStyle = "rgba(0,0,0,0.7)"; ctx.fillRect(npc.x - 55, npc.y - npc.h/2 - 25, 110, 22);
+            ctx.strokeStyle = "#ffaa00"; ctx.strokeRect(npc.x - 55, npc.y - npc.h/2 - 25, 110, 22);
+            ctx.fillStyle = "#fff"; ctx.font = "bold 8px sans-serif";
+            ctx.fillText(`${npc.type} (👊:${npc.cost})`, npc.x - 50, npc.y - npc.h/2 - 11);
+        }
+
+        // Рисуем мусорные баки
+        activeLocation.bins.forEach(b => {
+            if (b.broken) {
+                ctx.fillStyle = "#1a110e"; ctx.fillRect(b.x - 2, b.y + 12, 28, 6);
+            } else {
+                ctx.fillStyle = "#3b4a5a"; ctx.fillRect(b.x, b.y, 24, 18); 
+                ctx.fillStyle = "#ff5500"; ctx.font = "10px sans-serif"; ctx.fillText("🗑️", b.x + 4, b.y + 13);
+            }
+        });
+
+        // Рисуем ВСЮ ТОЛПУ врагов
+        activeLocation.enemies.forEach(en => {
+            if (en.hp <= 0) return;
+            ctx.drawImage(en.img, en.x - en.w/2, en.y - en.h/2, en.w, en.h);
+            
+            // Полоска жизней над каждым врагом
+            ctx.fillStyle = "black"; ctx.fillRect(en.x - 15, en.y - en.h/2 - 8, 30, 3);
+            ctx.fillStyle = "#red"; ctx.fillStyle = "#ff2200"; ctx.fillRect(en.x - 15, en.y - en.h/2 - 8, (en.hp/en.maxHp)*30, 3);
+            
+            ctx.fillStyle = "#ffffff"; ctx.font = "bold 8px sans-serif";
+            ctx.fillText(en.type, en.x - 18, en.y - en.h/2 - 13);
+        });
+
+        // Рисуем Оптимуса Прайма с разворотом влево/вправо
+        ctx.save();
+        if (player.dir === "left") {
+            ctx.translate(player.x + player.w, player.y);
+            ctx.scale(-1, 1);
+            ctx.drawImage(imgOptimus, 0, 0, player.w, player.h);
+        } else {
+            ctx.drawImage(imgOptimus, player.x, player.y, player.w, player.h);
+        }
+        ctx.restore();
+
+        // Эффекты частиц
+        particles.forEach(p => { ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, 3, 3); });
+
+        // Верхний HUD (Статистика + Очки Бомжа)
+        ctx.fillStyle = "rgba(0, 0, 0, 0.85)"; ctx.fillRect(0, 0, canvas.width, 22);
+        ctx.fillStyle = "#ffaa00"; ctx.font = "bold 9px sans-serif";
+        ctx.fillText(`🌐 МИР: ${activeLocation.name} | ❤️ HP: ${hp}/${maxHp}% | 🦾 АТК: ${dmg} | 🧰 ХЛАМ: ${money} | ⭐ ОЧКИ БОМЖА: ${hoboPoints}`, 8, 14);
+
+        // Бортовой нижний журнал новостей
+        ctx.fillStyle = "rgba(0,0,0,0.85)"; ctx.fillRect(0, canvas.height - 20, canvas.width, 20);
+        ctx.fillStyle = "#55ff55"; ctx.font = "9px monospace";
+        ctx.fillText("📟 " + logText, 8, canvas.height - 7);
+
+        // Экран Смерти
+        if (gameOver) {
+            ctx.fillStyle = "rgba(0,0,0,0.92)"; ctx.fillRect(0,0,canvas.width,canvas.height);
+            ctx.fillStyle = "red"; ctx.font = "bold 16px sans-serif"; 
+            ctx.fillText("ОПТИМУС ПРАЙМ СГНИЛ НА СВАЛКЕ", canvas.width/2 - 130, canvas.height/2 - 10);
+            ctx.fillStyle = "#fff"; ctx.font = "11px sans-serif";
+            ctx.fillText(`Ты набрал: ${hoboPoints} Очков Бомжа. Перезапусти страницу, чтобы отомстить!`, canvas.width/2 - 160, canvas.height/2 + 15);
+        }
+    }
+
+    // Игровой цикл
+    function gameLoop() {
+        update();
+        draw();
+        requestAnimationFrame(gameLoop);
+    }
+
+    // Первичный запуск движка
+    setTimeout(() => {
+        resizeCanvas();
+        gameLoop();
+    }, 150);
+</script>
+
+</body>
+</html>
