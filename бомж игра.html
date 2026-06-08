@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-select=none, touch-action=none">
+    <title>TRASH MATRIX: HIGH-RES UNIVERSE</title>
+    <style>
+        body {
+            background-color: #050404;
+            color: #ff9900;
+            font-family: 'Arial Black', sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            width: 100vw;
+        }
+        header {
+            background: #000;
+            text-align: center;
+            padding: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            border-bottom: 2px solid #ff5500;
+            color: #ff00ff;
+            z-index: 10;
+        }
+        #game-wrapper {
+            position: relative;
+            flex: 1;
+            width: 100%;
+            height: 100%;
+        }
+        #gameCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        .controls-overlay {
+            position: absolute;
+            bottom: 15px;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 30px;
+            box-sizing: border-box;
+            pointer-events: none;
+            z-index: 5;
+        }
+        .d-pad {
+            position: relative;
+            width: 130px;
+            height: 130px;
+            pointer-events: auto;
+        }
+        .d-btn {
+            position: absolute;
+            background: rgba(15, 10, 15, 0.85);
+            border: 2px solid #ff00ff;
+            color: #ff00ff;
+            width: 42px;
+            height: 42px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 20px;
+            font-weight: bold;
+            border-radius: 8px;
+            box-shadow: 0 0 10px #ff00ff55;
+        }
+        .d-btn:active { background: #ff00ff; color: #000; }
+        #d-up    { top: 0; left: 45px; }
+        #d-down  { bottom: 0; left: 45px; }
+        #d-left  { top: 45px; left: 0; }
+        #d-right { top: 45px; right: 0; }
+        
+        .action-container {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            pointer-events: auto;
+            margin-top: 30px;
+        }
+        .act-btn {
+            background: linear-gradient(#b30044, #550011);
+            border: 2px solid #ff0055;
+            width: 65px;
+            height: 65px;
+            border-radius: 50%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 0 15px #ff005577;
+        }
+        .act-btn:active {
+            transform: scale(0.9);
+            box-shadow: 0 0 30px #ff0055;
+        }
+        .act-btn .ico { font-size: 26px; }
+        .act-btn .lbl { font-size: 9px; color: #fff; font-weight: bold; margin-top: 2px;}
+    </style>
+</head>
+<body>
+
+    <header>TRASH MATRIX: HIGH-RES UNIVERSE (Анимированный фон с мусорками!)</header>
+
+    <div id="game-wrapper">
+        <canvas id="gameCanvas"></canvas>
+
+        <div class="controls-overlay">
+            <div class="d-pad">
+                <div class="d-btn" id="d-up">▲</div>
+                <div class="d-btn" id="d-left">◀</div>
+                <div class="d-btn" id="d-right">▶</div>
+                <div class="d-btn" id="d-down">▼</div>
+            </div>
+
+            <div class="action-container">
+                <div class="act-btn" id="btn-heal" style="background: linear-gradient(#ccaa00, #664400); border-color: #ffdd00; box-shadow: 0 0 15px #ffdd0077;">
+                    <span class="ico">🌯</span>
+                    <span class="lbl">Чебурек</span>
+                </div>
+                <div class="act-btn" id="btn-attack">
+                    <span class="ico">👊</span>
+                    <span class="lbl">УДАР/NPC</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    let screenWidth, screenHeight;
+    function resizeCanvas() {
+        const wrapper = document.getElementById("game-wrapper");
+        canvas.width = wrapper.clientWidth;
+        canvas.height = wrapper.clientHeight;
+        screenWidth = canvas.width;
+        screenHeight = canvas.height;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // === ПАЛИТРА ===
+    const pal = {
+        '.': 'transparent', '1': '#000000', 'B': '#00e5ff', 'b': '#0099aa', 'R': '#ff0055', 'r': '#aa0033',
+        'Y': '#ffe600', 'y': '#998800', 'W': '#ffffff', 'G': '#00ffaa', 'g': '#007755', 'S': '#ffccaa',
+        's': '#aa8877', 'H': '#663300', 'D': '#333333', 'd': '#111111', 'L': '#aaaaaa', 'l': '#666666',
+        'P': '#cc00ff', 'O': '#ff7700', 'o': '#aa5500'
+    };
+
+    function drawSprite(mapArray, scale) {
+        const c = document.createElement('canvas');
+        c.width = mapArray[0].length * scale;
+        c.height = mapArray.length * scale;
+        const cCtx = c.getContext('2d');
+        for (let y = 0; y < mapArray.length; y++) {
+            for (let x = 0; x < mapArray[y].length; x++) {
+                if (mapArray[y][x] !== '.') {
+                    cCtx.fillStyle = pal[mapArray[y][x]];
+                    cCtx.fillRect(x * scale, y * scale, scale, scale);
+                }
+            }
+        }
+        return c;
+    }
+
+    // === HIGH-RES СПРАЙТЫ ===
+    const imgOptimus = drawSprite([
+        ".........111111.........", ".......11BBYYBB11.......", "......1BBb1YY1bBB1......", "......1BBWWWWWWBB1......",
+        "......1BBb1YY1bBB1......", ".......111BBBB111.......", ".......1RRRRRRRR1.......", ".....11RWWWWWWWWR11.....",
+        "....1BB1RRRRRRRR1BB1....", "...1BBB11BB11BB11BBB1...", "...1B1bB11RRRR11Bb1B1...", "...1BBBB1WWWWWW1BBBB1...",
+        "...1B11B1BBBBBB1B11B1...", "...11RR1WWWWWWWW1RR11...", ".....1RR1BBBBBB1RR1.....", ".....1bb1bbWWbb1bb1.....",
+        ".....1111WWWWWW1111.....", ".....11RR11bb11RR11.....", ".....1BBBB1111BBBB1.....", ".....1BBBB1111BBBB1.....",
+        ".....1Bb11...11bB1.....", "....1BBB1.....1BBB1...."
+    ], 5);
+
+    const imgValera = drawSprite([
+        ".......1HHHHHHHH1.......", ".....1HHSSSSSSSShh1.....", "....1HSSSSSSSSSShhh1....", "....1SSSSSSSsSSS1111....",
+        "....1S11SsssS11S1SSSS1..", "....1SSSSSSSSSSShhhSS1..", ".....1SSSSSSSSShhhhh1...", "......1ssssssSshhhS1....",
+        "....111HHHHHHHhhhhh11...", "..11HHhhhGGGGGGhhhHHH1..", ".1HHHHhhhhGGGGhhhhhHHH1.", "1HHHHHhhhhGGGGhhhhhHHHH1",
+        "1HHHHhh111GGGG111hhHHHH1", "1HHHhh1HHHHGGHHHH1hhHHH1", "1HHHhHh1Hh111Hh1HhHHHHH1", "1HHHHHH1Hh111Hh1HHHHHHH1",
+        "1HHHHHHH1111111HHHHHHHH1", ".1HH1HHHHHhhhhHHHH1HH1..", "..111HHHHHhhhhHHHH111...", "..1HHHHHhh...hhHHHHH1...",
+        "..1HHHHHhh...hhHHHHH1...", "...11111.......11111..."
+    ], 5);
+
+    const imgMegatron = drawSprite([
+        ".........111111.........", ".......1dDDDDDDd1.......", "......1DDDDdDDdDD1......", ".....1dDDDDDDDDDDd1.....",
+        ".....1DDdd1111ddDD1.....", ".....1dDdDRRRRDdDd1.....", "......1DDDRWWWRDDD1.....", ".......1dDRRWRDd1.......",
+        "......11dDDWWDDd11......", ".....1dDDdDDDDdDDd1.....", "....1DDDDdDDDDdDDDD1....", "...1dDDdDDdDDdDDdDDd1...",
+        "..1DDDDDDDDDDDDDDDDDD1..", "..1DD11DDdDDDDdDD11DD1..", "..1d11LL1DDDDDD1LL11d1..", "...1dDD1LLddddLL1DDd1...",
+        "....1DDDDLLLLLLDDDD1....", ".....1DDdDDDDDDdDD1.....", ".....1dd1dDDDDd1dd1.....", ".....1DDd11...11dDD1.....",
+        ".....1DDDDD11DDDDD1.....", ".....1dddddd1dddddd1...."
+    ], 6);
+
+    const imgShaurman = drawSprite([
+        ".......111111111.......", ".....11WWWWWWWWW11.....", "....1WWWWWWWWWWWWW1....", "...1WW111WWWW111WW1...",
+        "..1WWWSSSSSSSSSSWWW1..", "..1WWSS1S1SSS1S1SSWW1..", "..1WWSSSSSSSSSSWW11...", "..1WWWSSWWSSSSWWWWW1..",
+        "..11WWSSSSSSSSSWW11...", "....11OOOOOOOOOO11.....", "...1OOOOOOOOOOOOOO1....", "..1OOOOOOooooooOOOOO1..",
+        "..1OOOOOooooooOOOOOO1..", "..1OOooooooOooooooOO1..", "...1OOOOooooooOOOOO1....", "....1OOOOOOOOOOOO1.....",
+        "....1ooOOOOOOOOOOoo1....", "....1OOooOOOOooOO111....", "....1OOOOOOOOOOOO111....", "....11..11...11..11...."
+    ], 5);
+
+    const imgSifor = drawSprite([
+        ".......111111111.......", ".....11PPPPPPPPPP11....", "....1PPPPPPPPPPPPPP1...", "...1PPP11PPPPP11PPP1...",
+        "..1PPPSSSSSsSSS1111....", "..1PPPSSSSSSSSSSS11....", "..1PPPPSSSSSSSSS1h1....", "...11PPSSSSSSSSPhh1....",
+        ".....11PPPPPPPhhhh1....", "....1LLLLLLLLLLL11.....", "...1LLLLLLLLLLLLL1.....", "..1LLlllLlllLlllLL1....",
+        "..1LLlllLLLLlllLLL1....", "..1LlllLLLLLLLlllLL1...", "...1LLlllllllllLLL1....", "....1LLLLLLLLLLLL1.....",
+        "....1lLlLLLLLLLLLlL1...", "....1LLllLLLLLLllLL1...", "....1LLLLLLLLLLLLLL1...", "....11..11...11..11...."
+    ], 5);
+
+    const imgBin = drawSprite([
+        "......111111111111......", "....11dDDDDDDDDDDd11....", "...11ddLLLLLLLLLLdd11...", "...1DLLLLLLLLLLLLLLD1...",
+        "..1dDLLLLLLLLLLLLLLdD1..", "..11111111111111111111..", "..1dDddDDddDDddDDddDd1..", "..1DdDDDddDDddDDddDDd1..",
+        "..1dDDDDDDDDDDDDDDDDd1..", "..1DdDDDddDDddDDddDDd1..", "..1dDDDDDDDDDDDDDDDDd1..", "..1DdDDDddDDddDDddDDd1..",
+        "..1dDDDDDDDDDDDDDDDDd1..", "..1DdDDDddDDddDDddDDd1..", "..1dDDDDDDDDDDDDDDDDd1..", "..1DdDDDddDDddDDddDDd1..",
+        "..1dDDDDDDDDDDDDDDDDd1..", "...1dDdDDddDDddDDdDd1...", "....1111111111111111...."
+    ], 5);
+
+    const imgBinBroken = drawSprite([
+        "....11..11..11..11..11..", "...1dDD1DDd1dDD1DDd1dDD1", "..1LLLLLLLLLLLLLLLLLLLLD", ".1dDLLLLLLLLLLLLLLLLLLdL",
+        ".11111111111111111111111", ".1DddDDddDDddDDddDDddDd1", ".1dDDDDDDDDDDDDDDDDDDDDd", "1DdDD1111Dd111dDD11DdDD1",
+        "1dD1dd...dDd..1Dd...dDd1", "1DddD....DDd11dD11...dD1", "1dDD1...dDddddDDddD...d1", "1DdDDdDDdddDDdddDdDddDd1",
+        "1dDDDDDDDDDDDDDDDDDDDDD1", ".11DdDddDdddDddDddDd111.", "...1dddddDddDddDddD11...", "....1111111111111111...."
+    ], 5);
+
+    // Параметры
+    let hp = 100, maxHp = 100, dmg = 35, money = 15, hoboPoints = 0;
+    let currentRoomId = 1; 
+    let gameOver = false;
+    let logText = "Добро пожаловать в HIGH-RES Матрицу! Беги направо ▶";
+
+    const player = { x: 50, y: 160, w: 120, h: 110, speed: 6, dir: "right" };
+    const keys = { up: false, down: false, left: false, right: false };
+    let particles = [];
+    let frameCount = 0;
+
+    let activeLocation = {};
+
+    // Биомы
+    const biomes = [
+        { name: "ОКРАИНА СВАЛКИ", color: "#1a0b1c", accent: "#ff00ff" },
+        { name: "БАЗАР ШАУРМЕНОВ", color: "#0a1128", accent: "#00e5ff" },
+        { name: "ПОДЗЕМЕЛЬЯ МАТРИЦЫ", color: "#2a0a0a", accent: "#ffaa00" },
+        { name: "ЗАБРОШЕННОЕ МЕТРО", color: "#001a0f", accent: "#00ffaa" }
+    ];
+
+    // === ПАРЯЩИЕ МУСОРКИ (Голограммы в небе) ===
+    let floatingBins = [];
+    for(let i=0; i<8; i++) {
+        floatingBins.push({
+            x: Math.random() * (window.innerWidth || 800),
+            y: 10 + Math.random() * 100,
+            speed: 0.3 + Math.random() * 0.7,
+            scale: 0.2 + Math.random() * 0.4,
+            opacity: 0.1 + Math.random() * 0.25,
+            floatOffset: Math.random() * Math.PI * 2
+        });
+    }
+
+    function generateLocation(roomId) {
+        let biome = biomes[roomId % biomes.length];
+        let difficulty = Math.min(4, Math.floor(roomId / 3) + 1); 
+        let enemyCount = Math.floor(Math.random() * difficulty) + 1;
+
+        let loc = {
+            id: roomId, name: `${roomId}. ${biome.name}`, bgColor: biome.color, accentColor: biome.accent,
+            bins: [], enemies: [], npc: null
+        };
+
+        let binCount = Math.floor(Math.random() * 3) + 1;
+        for(let i=0; i<binCount; i++) {
+            loc.bins.push({ x: 180 + (i * 220) + Math.random()*50, y: 150 + Math.random()*80, broken: false, w: 90, h: 90 });
+        }
+
+        for(let i=0; i<enemyCount; i++) {
+            let isBoss = (roomId % 5 === 0) && (i === 0);
+            let eType = isBoss ? "МЕГАТРОН" : "Бомж Валера";
+            let eImg = isBoss ? imgMegatron : imgValera;
+            let eHp = isBoss ? (200 + roomId*15) : (60 + roomId * 7);
+
+            loc.enemies.push({
+                x: 300 + (i * 150) + Math.random()*60, y: 140 + Math.random()*80,
+                hp: eHp, maxHp: eHp, type: eType, img: eImg,
+                w: isBoss ? 160 : 120, h: isBoss ? 130 : 110
+            });
+        }
+
+        if (roomId % 5 !== 0 && Math.random() < 0.6) {
+            let npcType = Math.random() > 0.5 ? "Шаурмен" : "Сифон";
+            loc.npc = {
+                x: canvas.width / 2, y: 120,
+                type: npcType, img: npcType === "Шаурмен" ? imgShaurman : imgSifor,
+                w: 110, h: 100, cost: 25 + roomId * 3
+            };
+        }
+        return loc;
+    }
+
+    activeLocation = generateLocation(currentRoomId);
+
+    function setupJoystick(id, prop) {
+        const b = document.getElementById(id);
+        const on = (e) => { e.preventDefault(); keys[prop] = true; if(prop==="left"||prop==="right") player.dir = prop; };
+        const off = (e) => { e.preventDefault(); keys[prop] = false; };
+        b.addEventListener("touchstart", on); b.addEventListener("touchend", off);
+        b.addEventListener("mousedown", on); b.addEventListener("mouseup", off);
+        b.addEventListener("mouseleave", off);
+    }
+    setupJoystick("d-up", "up"); setupJoystick("d-down", "down");
+    setupJoystick("d-left", "left"); setupJoystick("d-right", "right");
+
+    document.getElementById("btn-attack").addEventListener("touchstart", (e) => { e.preventDefault(); doAttack(); });
+    document.getElementById("btn-attack").addEventListener("mousedown", (e) => { e.preventDefault(); doAttack(); });
+    document.getElementById("btn-heal").addEventListener("touchstart", (e) => { e.preventDefault(); doHeal(); });
+    document.getElementById("btn-heal").addEventListener("mousedown", (e) => { e.preventDefault(); doHeal(); });
+
+    function doAttack() {
+        if (gameOver) return;
+        let hit = false;
+        let npc = activeLocation.npc;
+
+        if (npc && Math.hypot(player.x - npc.x, player.y - npc.y) < 110) {
+            if (money >= npc.cost) {
+                money -= npc.cost;
+                if (npc.type === "Шаурмен") {
+                    dmg += 10; logText = `🌯 HIGH-RES Чебурек! АТАКА выросла до ${dmg}!`;
+                } else {
+                    maxHp += 30; hp += 30; logText = `🧪 Сверхпрочный хлам! БРОНЯ выросла до ${maxHp}!`;
+                }
+                createParticles(npc.x, npc.y, "#00ffaa");
+            } else {
+                logText = `❌ Не хватает хлама! Нужно еще ${npc.cost - money} ед.`;
+            }
+            return;
+        }
+
+        activeLocation.bins.forEach(b => {
+            if (!b.broken && Math.hypot(player.x - b.x, player.y - b.y) < 100) {
+                b.broken = true; hit = true;
+                let prize = Math.floor(Math.random() * 20) + 10;
+                money += prize; hoboPoints += 15;
+                logText = `🗑️ Разбит HIGH-RES бак! Найдено +${prize} хлама.`;
+                createParticles(b.x, b.y, "#ffcc00");
+            }
+        });
+
+        activeLocation.enemies.forEach(en => {
+            if (en.hp > 0 && Math.hypot(player.x - (en.x - en.w/2), player.y - (en.y - en.h/2)) < 130) {
+                en.hp -= dmg; hit = true;
+                createParticles(en.x, en.y, "#ff00ff");
+                logText = `👊 Силовой удар по ${en.type}! Нанесено ${dmg} урона.`;
+                if (en.hp <= 0) {
+                    let reward = en.type === "МЕГАТРОН" ? 200 : 40;
+                    money += reward; hoboPoints += en.type === "МЕГАТРОН" ? 400 : 80;
+                    logText = `💀 ${en.type} повержен! Куча HIGH-RES деталей (+${reward})!`;
+                }
+            }
+        });
+
+        if(!hit && !npc) logText = "💨 Удар по воздуху! Подойди ближе.";
+    }
+
+    function doHeal() {
+        if (money >= 25 && hp < maxHp) {
+            money -= 25; hp = Math.min(maxHp, hp + 50);
+            logText = "🌯 Ремонтный чебурек съеден!";
+            createParticles(player.x + 40, player.y + 40, "#ffe600");
+        } else if (hp >= maxHp) {
+            logText = "❌ Обшивка идеальна!";
+        } else {
+            logText = "❌ Не хватает хлама (нужно 25)!";
+        }
+    }
+
+    function createParticles(x, y, color) {
+        for(let i=0; i<15; i++) {
+            particles.push({x: x, y: y, vx: (Math.random()-0.5)*12, vy: (Math.random()-0.5)*12, life: 30, color: color});
+        }
+    }
+
+    function update() {
+        if (gameOver) return;
+        frameCount++;
+
+        if (keys.up && player.y > 100) player.y -= player.speed;
+        if (keys.down && player.y < canvas.height - 110) player.y += player.speed;
+        if (keys.left) player.x -= player.speed;
+        if (keys.right) player.x += player.speed;
+
+        if (player.x > canvas.width + 20) {
+            currentRoomId++; player.x = -20;
+            activeLocation = generateLocation(currentRoomId);
+            hoboPoints += 200;
+            logText = `🚀 Уровень: ${activeLocation.name}!`;
+        }
+        if (player.x < -50) {
+            if (currentRoomId > 1) {
+                currentRoomId--; player.x = canvas.width - 20;
+                activeLocation = generateLocation(currentRoomId);
+                logText = `↩️ Откат к: ${activeLocation.name}`;
+            } else {
+                player.x = 5;
+            }
+        }
+
+        activeLocation.enemies.forEach(en => {
+            if (en.hp <= 0) return;
+            let dx = player.x + player.w/2 - en.x;
+            let dy = player.y + player.h/2 - en.y;
+            let dist = Math.hypot(dx, dy);
+
+            if (dist > 60) {
+                en.x += (dx / dist) * 2.1; en.y += (dy / dist) * 2.1;
+            } else {
+                if (Math.random() < 0.05) {
+                    let damageDealt = en.type === "МЕГАТРОН" ? 22 : 10;
+                    hp -= damageDealt;
+                    logText = `💥 ${en.type} пробил HIGH-RES броню (-${damageDealt} HP)!`;
+                    createParticles(player.x + 40, player.y + 40, "#ff0055");
+                    if (hp <= 0) { hp = 0; gameOver = true; }
+                }
+            }
+        });
+
+        // Анимация парящих мусорок
+        floatingBins.forEach(fb => {
+            fb.x -= fb.speed; 
+            if(fb.x < -100) {
+                fb.x = canvas.width + 50;
+                fb.y = 10 + Math.random() * 100;
+            }
+        });
+
+        particles.forEach((p, i) => { p.x += p.vx; p.y += p.vy; p.life--; if(p.life<=0) particles.splice(i,1); });
+    }
+
+    function draw() {
+        // 1. Небо (Градиент)
+        let skyGrad = ctx.createLinearGradient(0, 0, 0, 150);
+        skyGrad.addColorStop(0, activeLocation.bgColor);
+        skyGrad.addColorStop(1, "#020101");
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // 2. Киберпанк Солнце/Луна
+        ctx.shadowBlur = 40;
+        ctx.shadowColor = activeLocation.accentColor;
+        ctx.fillStyle = activeLocation.accentColor;
+        ctx.beginPath();
+        let sunX = 100 + (currentRoomId * 40) % (canvas.width || 800);
+        ctx.arc(sunX, 70, 45, 0, Math.PI*2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // 3. ПАРЯЩИЕ МУСОРКИ (Голограммы в небе)
+        floatingBins.forEach(fb => {
+            ctx.globalAlpha = fb.opacity;
+            // Добавляем эффект покачивания вверх-вниз
+            let floatY = fb.y + Math.sin(frameCount * 0.03 + fb.floatOffset) * 15;
+            ctx.drawImage(imgBin, fb.x, floatY, 90 * fb.scale, 90 * fb.scale);
+        });
+        ctx.globalAlpha = 1.0; // Возвращаем нормальную прозрачность
+
+        // 4. СИЛУЭТЫ ГИГАНТСКИХ МУСОРОК (Параллакс горизонт вместо зданий)
+        ctx.fillStyle = "#080605";
+        let bgWidth = canvas.width + 300;
+        for(let i=0; i<15; i++) {
+            let bw = 40 + (i * 31 % 60); // Ширина бака-здания
+            let bh = 30 + (i * 47 % 80); // Высота бака-здания
+            let startX = i * 90;
+            // Анимация движения параллакса
+            let bx = startX - (frameCount * 0.2) - (currentRoomId * 20);
+            
+            // Зацикливаем бесконечный фон
+            bx = ((bx % bgWidth) + bgWidth) % bgWidth - 150;
+
+            // Рисуем форму трапеции (база мусорки)
+            ctx.beginPath();
+            ctx.moveTo(bx, 150); // Левый низ
+            ctx.lineTo(bx + bw, 150); // Правый низ
+            ctx.lineTo(bx + bw + 10, 150 - bh); // Правый верх
+            ctx.lineTo(bx - 10, 150 - bh); // Левый верх
+            ctx.fill();
+            
+            // Рисуем крышку бака
+            ctx.fillRect(bx - 15, 150 - bh - 8, bw + 30, 8);
+        }
+
+        // 5. Линия горизонта
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = activeLocation.accentColor;
+        ctx.strokeStyle = activeLocation.accentColor;
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(0, 150); ctx.lineTo(canvas.width, 150); ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // 6. 3D Сетка на полу
+        ctx.strokeStyle = activeLocation.accentColor + "33"; 
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for(let i=-400; i<canvas.width+400; i+=60) {
+            ctx.moveTo(canvas.width/2, 150);
+            ctx.lineTo(i - (frameCount%60), canvas.height); 
+        }
+        for(let j=155; j<canvas.height; j+= (j-140)*0.4) {
+            ctx.moveTo(0, j); ctx.lineTo(canvas.width, j);
+        }
+        ctx.stroke();
+
+        // --- ИГРОВЫЕ ОБЪЕКТЫ ---
+
+        let npc = activeLocation.npc;
+        if (npc) {
+            ctx.drawImage(npc.img, npc.x - npc.w/2, npc.y - npc.h/2, npc.w, npc.h);
+            ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(npc.x - 70, npc.y - npc.h/2 - 30, 140, 26);
+            ctx.strokeStyle = activeLocation.accentColor; ctx.strokeRect(npc.x - 70, npc.y - npc.h/2 - 30, 140, 26);
+            ctx.fillStyle = "#fff"; ctx.font = "bold 11px sans-serif";
+            ctx.fillText(`${npc.type} (👊:${npc.cost})`, npc.x - 65, npc.y - npc.h/2 - 12);
+        }
+
+        activeLocation.bins.forEach(b => {
+            let binImg = b.broken ? imgBinBroken : imgBin;
+            ctx.fillStyle = "rgba(0,0,0,0.4)"; ctx.beginPath(); ctx.ellipse(b.x, b.y + 20, 30, 8, 0, 0, Math.PI*2); ctx.fill();
+            ctx.drawImage(binImg, b.x - b.w/2, b.y - b.h/2, b.w, b.h);
+        });
+
+        activeLocation.enemies.forEach(en => {
+            if (en.hp <= 0) return;
+            ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.beginPath(); ctx.ellipse(en.x, en.y + en.h/2 - 5, en.w/2, 10, 0, 0, Math.PI*2); ctx.fill();
+            ctx.drawImage(en.img, en.x - en.w/2, en.y - en.h/2, en.w, en.h);
+            ctx.fillStyle = "black"; ctx.fillRect(en.x - 25, en.y - en.h/2 - 12, 50, 6);
+            ctx.fillStyle = "#ff00ff"; ctx.fillRect(en.x - 25, en.y - en.h/2 - 12, (en.hp/en.maxHp)*50, 6);
+            ctx.fillStyle = "#ffffff"; ctx.font = "bold 11px sans-serif";
+            ctx.fillText(en.type, en.x - 30, en.y - en.h/2 - 18);
+        });
+
+        ctx.save();
+        ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.beginPath(); ctx.ellipse(player.x + player.w/2, player.y + player.h - 5, player.w/2, 10, 0, 0, Math.PI*2); ctx.fill();
+        
+        if (player.dir === "left") {
+            ctx.translate(player.x + player.w, player.y);
+            ctx.scale(-1, 1);
+            ctx.drawImage(imgOptimus, 0, 0, player.w, player.h);
+        } else {
+            ctx.drawImage(imgOptimus, player.x, player.y, player.w, player.h);
+        }
+        ctx.restore();
+
+        particles.forEach(p => { 
+            ctx.fillStyle = p.color; 
+            ctx.shadowBlur = 10; ctx.shadowColor = p.color;
+            ctx.fillRect(p.x, p.y, 4, 4); 
+            ctx.shadowBlur = 0;
+        });
+
+        // Интерфейс
+        ctx.fillStyle = "rgba(0, 0, 0, 0.9)"; ctx.fillRect(0, 0, canvas.width, 28);
+        ctx.fillStyle = "#ff00ff"; ctx.font = "bold 11px sans-serif";
+        ctx.fillText(`🌐 МИР: ${activeLocation.name} | ❤️ HP: ${hp}/${maxHp} | 🦾 АТК: ${dmg} | 🧰 ХЛАМ: ${money} | ⭐ ОЧКИ: ${hoboPoints}`, 10, 19);
+
+        ctx.fillStyle = "rgba(0,0,0,0.9)"; ctx.fillRect(0, canvas.height - 25, canvas.width, 25);
+        ctx.fillStyle = "#55ffaa"; ctx.font = "11px monospace";
+        ctx.fillText("📟 " + logText, 10, canvas.height - 8);
+
+        if (gameOver) {
+            ctx.fillStyle = "rgba(20,0,0,0.85)"; ctx.fillRect(0,0,canvas.width,canvas.height);
+            ctx.fillStyle = "#ff00ff"; ctx.font = "bold 32px sans-serif"; 
+            ctx.textAlign = "center";
+            ctx.fillText("МАТРИЦА ОТКЛЮЧЕНА", canvas.width/2, canvas.height/2 - 10);
+            ctx.fillStyle = "white"; ctx.font = "16px sans-serif";
+            ctx.fillText("Обнови страницу, чтобы перезагрузить ядро", canvas.width/2, canvas.height/2 + 30);
+            ctx.textAlign = "left";
+        }
+    }
+
+    function gameLoop() {
+        update();
+        draw();
+        requestAnimationFrame(gameLoop);
+    }
+
+    gameLoop();
+</script>
+</body>
+</html>
